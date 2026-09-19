@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>タロット</title>
+<meta name="theme-color" content="#16264A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#16264A;      /* 背景の濃い藍 */
+  --night-2:#101B36;
+  --blue:#2B4B8C;       /* カードの裏 */
+  --gold:#E3B23C;
+  --gold-dim:#A8801F;
+  --paper:#F3E7C8;      /* カードの表と本文 */
+  --paper-dim:#BFAC7C;
+  --ink:#16110D;
+}
+*{box-sizing:border-box}
+body{
+  margin:0 auto;
+  max-width:560px;
+  min-height:100vh;
+  padding:28px 18px calc(40px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg,var(--night),var(--night-2)) fixed;
+  color:var(--paper);
+  font-family:"Shippori Mincho B1", serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---- 見出し ---- */
+h1{margin:0 0 6px;font-size:30px;letter-spacing:.28em;text-indent:.28em}
+.lede{margin:0 0 24px;font-size:13px;line-height:1.8;color:var(--paper-dim)}
+
+/* ---- ボタン共通 ---- */
+button{font-family:inherit;cursor:pointer;border-radius:2px}
+.outline{background:transparent;color:var(--paper);border:1px solid rgba(191,172,124,.45)}
+.filled{background:var(--gold);color:var(--night);border:1px solid var(--gold);font-weight:700}
+
+.modes{display:flex;gap:8px;margin-bottom:26px}
+.modes button{flex:1;padding:11px 4px;font-size:13.5px;letter-spacing:.06em}
+.actions{display:flex;gap:10px;margin-top:26px}
+.actions button{flex:1;padding:13px 6px;font-size:14px;letter-spacing:.08em}
+
+.sound{
+  position:absolute;top:26px;right:16px;
+  display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;padding:0;border-radius:50%;
+  color:var(--gold);border-color:rgba(227,178,60,.7);
+}
+.sound svg{width:19px;height:19px}
+.sound.muted{color:var(--paper-dim);border-color:rgba(191,172,124,.4)}
+
+/* ---- 山札 ---- */
+.stage{text-align:center}
+.deck{position:relative;width:132px;height:210px;margin:8px auto 22px;padding:0;background:none;border:0}
+.deck span{position:absolute;inset:0;display:block;border:1.5px solid var(--gold-dim);border-radius:6px;background:var(--blue)}
+.deck span:nth-child(1){transform:translate(-7px,6px) rotate(-4deg);opacity:.5}
+.deck span:nth-child(2){transform:translate(4px,3px) rotate(3deg);opacity:.75}
+.deck span:nth-child(3){overflow:hidden}
+.hint{font-size:14px;letter-spacing:.1em;color:var(--gold)}
+
+/* ---- 引いたカード ---- */
+.row{display:flex;justify-content:center;gap:10px;margin:4px 0 22px}
+.slot{flex:1;max-width:150px}
+.pos{margin-bottom:7px;font-size:11.5px;letter-spacing:.14em;color:var(--paper-dim)}
+.card{display:block;width:100%;aspect-ratio:2/3.3;padding:0;background:none;border:0;perspective:900px}
+.card span{display:block}          /* ボタンの中身は既定で横並びなので縦積みに直す */
+.inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .62s cubic-bezier(.2,.7,.25,1)}
+.card.open .inner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;overflow:hidden;border:1.5px solid var(--gold-dim);border-radius:5px;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.back{background:var(--blue)}
+.front{
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:8px 5px 7px;transform:rotateY(180deg);
+  background:var(--paper);color:var(--ink);
+}
+.front.reversed .emblem{transform:rotate(180deg)}
+.numeral{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--gold-dim)}
+.emblem{width:74%;max-height:56%}
+.cname{font-size:12.5px;font-weight:700;line-height:1.35;text-align:center}
+.orient{margin-top:2px;font-size:10.5px;color:#6A5F4C}
+
+/* ---- 読み ---- */
+.entry{padding:16px 0 4px;border-top:1px solid rgba(191,172,124,.35)}
+.entry h2{margin:0 0 3px;font-size:17px;color:var(--gold)}
+.entry .meta{margin:0 0 8px;font-size:11.5px;letter-spacing:.08em;color:var(--paper-dim)}
+.entry p{margin:0;font-size:14.5px;line-height:1.95}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  padding:9px 18px;border-radius:2px;
+  background:var(--paper);color:var(--ink);font-size:13px;
+  opacity:0;pointer-events:none;transition:opacity .25s;
+}
+.toast.show{opacity:1}
+:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+[hidden]{display:none !important}
+@media (prefers-reduced-motion: reduce){ .inner{transition:none} }
+</style>
+</head>
+<body>
+
+<button class="sound outline" id="sound" aria-label="音を消す">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+    <path d="M4 9v6h4l5 4V5L8 9z"/>
+    <g id="waves"><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></g>
+    <path id="slash" d="M17 9l5 6M22 9l-5 6" hidden/>
+  </svg>
+</button>
+
+<h1>タロット</h1>
+<p class="lede">カードを引いて、いまの自分を読む。<br>今日の一枚は日付ごとに決まっていて、何度開いても同じ絵が出ます。</p>
+
+<div class="modes">
+  <button class="filled" data-count="1" aria-pressed="true">今日の一枚</button>
+  <button class="outline" data-count="3" aria-pressed="false">三枚引き</button>
+</div>
+
+<div class="stage" id="stage">
+  <button class="deck" id="deck" aria-label="カードを引く"><span></span><span></span><span></span></button>
+  <p class="hint" id="hint">タップして引く</p>
+</div>
+
+<div class="row" id="row" hidden></div>
+<div id="reading"></div>
+
+<div class="actions" id="actions" hidden>
+  <button class="outline" id="again">もう一度引く</button>
+  <button class="filled" id="share">結果をシェア</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const $ = id => document.getElementById(id);   /* $ ＝ getElementById の省略。IDで要素を1つ取る */
+
+/* ============================================================
+   1. カードのデータ
+   ============================================================ */
+
+/* 各カードの絵。100×100 の座標に線を引いた図形（SVG＝エスブイジー） */
+const EMBLEMS = {
+  fool:'<circle cx="50" cy="30" r="11"/><path d="M50 41v30M32 78l18-7 18 7"/><path d="M22 84h56"/>',
+  magician:'<path d="M50 22v56"/><path d="M28 46c0-7 6-11 11-6s11 12 16 6 11-9 15-4-1 16-9 12-14-14-20-16-13 2-13 8z"/>',
+  priestess:'<path d="M30 26v52M70 26v52"/><path d="M62 40a16 16 0 1 1-16-16 13 13 0 0 0 16 16z"/>',
+  empress:'<path d="M50 80V38"/><path d="M50 46c-8-4-12-12-12-20 8 2 12 8 12 14M50 46c8-4 12-12 12-20-8 2-12 8-12 14"/><circle cx="50" cy="30" r="4"/>',
+  emperor:'<path d="M28 80V44l22-16 22 16v36z"/><path d="M40 80V60h20v20"/>',
+  hierophant:'<path d="M50 20v62M34 38h32M38 52h24M42 66h16"/>',
+  lovers:'<circle cx="38" cy="60" r="17"/><circle cx="62" cy="60" r="17"/><circle cx="50" cy="26" r="8"/>',
+  chariot:'<circle cx="50" cy="56" r="22"/><path d="M50 34v44M28 56h44M35 41l30 30M65 41L35 71"/>',
+  strength:'<circle cx="50" cy="52" r="18"/><path d="M50 20c-6 6-6 10 0 14 6-4 6-8 0-14z"/><path d="M32 70l-8 12M68 70l8 12"/>',
+  hermit:'<path d="M30 84L64 24"/><path d="M52 40h24l6 14-6 14H52l-6-14z"/><circle cx="64" cy="54" r="6"/>',
+  wheel:'<circle cx="50" cy="52" r="26"/><circle cx="50" cy="52" r="9"/><path d="M50 26v52M24 52h52M32 34l36 36M68 34L32 70"/>',
+  justice:'<path d="M50 22v58M30 80h40M26 38h48"/><path d="M26 38l-9 18h18zM74 38l-9 18h18z"/>',
+  hanged:'<path d="M24 24h52M50 24v18"/><circle cx="50" cy="50" r="8"/><path d="M50 58v14l-14 12M50 72l14 12"/>',
+  death:'<path d="M24 80C36 44 62 26 82 24"/><path d="M82 24c-14 14-30 18-42 14"/><path d="M18 86l12-8"/>',
+  temperance:'<path d="M30 30l10 22H20zM70 52l10 22H60z"/><path d="M35 52c0 14 12 14 12 22M65 74c0-16-12-16-12-24"/>',
+  devil:'<circle cx="50" cy="46" r="18"/><path d="M36 30l-8-12M64 30l8-12"/><path d="M40 44h4M56 44h4"/><path d="M36 76h28"/>',
+  tower:'<path d="M32 82V40h36v42z"/><path d="M28 40l22-16 22 16"/><path d="M56 44l-12 18h12l-10 16"/>',
+  star:'<path d="M50 18l7 20 21 1-16 14 6 21-18-12-18 12 6-21-16-14 21-1z"/><path d="M24 84h52"/>',
+  moon:'<path d="M64 30a24 24 0 1 0 0 44 19 19 0 0 1 0-44z"/><path d="M40 84c0-6 4-10 4-16"/><path d="M60 84c0-6-4-10-4-16"/>',
+  sun:'<circle cx="50" cy="52" r="17"/><path d="M50 20v10M50 74v10M18 52h10M72 52h10M28 30l7 7M72 30l-7 7M28 74l7-7M72 74l-7-7"/>',
+  judgement:'<path d="M22 62l44-24v22z"/><path d="M66 44l14-8v30l-14-8z"/><path d="M24 78h52"/>',
+  world:'<ellipse cx="50" cy="52" rx="22" ry="30"/><circle cx="50" cy="52" r="8"/><circle cx="22" cy="24" r="3"/><circle cx="78" cy="24" r="3"/><circle cx="22" cy="80" r="3"/><circle cx="78" cy="80" r="3"/>'
+};
+
+/* 大アルカナ22枚。num＝番号、up＝正位置の読み、rev＝逆位置（reversed）の読み */
+const DECK = [
+  {num:'0',    name:'愚者',        en:'The Fool',              emblem:'fool',
+   up:'まだ何も決まっていない身軽さが、いまのあなたの武器です。準備が足りない気がしても、その一歩は思っているより軽い。',
+   rev:'勢いだけで進もうとしていませんか。足元を一度見てから動くと、同じ道でも結果が変わります。'},
+  {num:'I',    name:'魔術師',      en:'The Magician',          emblem:'magician',
+   up:'必要なものはすでに手元に揃っています。あとは「やる」と決めるだけ。動き出せば流れは自分の側につきます。',
+   rev:'器用さが空回りしています。手を広げるより、いま一番大事な一つに絞るときです。'},
+  {num:'II',   name:'女教皇',      en:'The High Priestess',    emblem:'priestess',
+   up:'まだ言葉にできていない直感が正しい。急いで答えを出さず、静かに考える時間を確保してください。',
+   rev:'頭で考えすぎて、自分の感覚を無視しています。理屈より、最初に感じた違和感のほうが当たっています。'},
+  {num:'III',  name:'女帝',        en:'The Empress',           emblem:'empress',
+   up:'育ててきたものが実る時期。人にも自分にも、少し甘くしていい日です。',
+   rev:'与えすぎて消耗しています。まず自分の分を確保してから、余りを配ってください。'},
+  {num:'IV',   name:'皇帝',        en:'The Emperor',           emblem:'emperor',
+   up:'自分でルールを決めて、そのとおりに動く。地味な管理があなたの状況を安定させます。',
+   rev:'力で押し通そうとすると反発が返ってきます。守らせるより、まず自分が守るほうが早い。'},
+  {num:'V',    name:'法王',        en:'The Hierophant',        emblem:'hierophant',
+   up:'先を歩いた人のやり方を素直に借りていい場面。基本に沿うことが、いちばんの近道です。',
+   rev:'当たり前とされている枠が、あなたには窮屈になっています。外れてみる価値があります。'},
+  {num:'VI',   name:'恋人',        en:'The Lovers',            emblem:'lovers',
+   up:'心が動いたほうを選んでいい。損得より、一緒にいて楽な相手・こと が正解です。',
+   rev:'決めきれずに両方を抱えています。選択を先延ばしにするほど、選べる幅は狭くなります。'},
+  {num:'VII',  name:'戦車',        en:'The Chariot',           emblem:'chariot',
+   up:'迷いが晴れて前に出られます。多少強引でも、いまは進んだほうが結果につながります。',
+   rev:'アクセルとブレーキを同時に踏んでいます。目的地をもう一度はっきりさせてください。'},
+  {num:'VIII', name:'力',          en:'Strength',              emblem:'strength',
+   up:'ねじ伏せるのではなく、粘って付き合う強さ。時間をかければ必ずこちらに傾きます。',
+   rev:'自信が落ちて、必要以上に自分を疑っています。できたことを数えるところから戻してください。'},
+  {num:'IX',   name:'隠者',        en:'The Hermit',            emblem:'hermit',
+   up:'一人になる時間が必要です。人の意見を集めるより、静かに考えたほうが答えが出ます。',
+   rev:'こもりすぎて視野が狭くなっています。誰かに話すだけで、驚くほど整理されます。'},
+  {num:'X',    name:'運命の輪',    en:'Wheel of Fortune',      emblem:'wheel',
+   up:'流れが変わるタイミング。自分の力とは関係ないところから、いい話が来ます。',
+   rev:'いまは動かない時期。無理に変えようとせず、次の波を待つほうが得です。'},
+  {num:'XI',   name:'正義',        en:'Justice',               emblem:'justice',
+   up:'やったことがそのまま返ってきます。ごまかさずに向き合えば、公平な結果が出ます。',
+   rev:'どこかに無理な帳尻合わせがあります。見て見ぬふりをしている一点が原因です。'},
+  {num:'XII',  name:'吊るされた男', en:'The Hanged Man',       emblem:'hanged',
+   up:'止まっているように見えて、必要な待ち時間です。見方を逆さにすると意味がわかります。',
+   rev:'耐えること自体が目的になっています。その我慢は、もう誰の得にもなっていません。'},
+  {num:'XIII', name:'死神',        en:'Death',                 emblem:'death',
+   up:'終わらせることで次が始まります。惜しくても、区切りをつけるのは今です。',
+   rev:'終わったものにまだ手をかけています。手放せない理由のほうを、先に片付けてください。'},
+  {num:'XIV',  name:'節制',        en:'Temperance',            emblem:'temperance',
+   up:'極端に振れず、ちょうどいい配分を探る時期。地道な調整が効きます。',
+   rev:'バランスが崩れています。何か一つを削るだけで、全体が回り始めます。'},
+  {num:'XV',   name:'悪魔',        en:'The Devil',             emblem:'devil',
+   up:'欲しいものを欲しいと認めていい。ただし、その執着が何につながっているかは見ておくこと。',
+   rev:'縛られていたものから抜け出せます。実は鎖はかかっていなかったと気づく瞬間です。'},
+  {num:'XVI',  name:'塔',          en:'The Tower',             emblem:'tower',
+   up:'予定が壊れます。ただし壊れるのは、もともと無理があった部分だけです。',
+   rev:'崩れかけを支え続けている状態。早めに手を離したほうが傷は浅く済みます。'},
+  {num:'XVII', name:'星',          en:'The Star',              emblem:'star',
+   up:'先が見えます。派手さはなくても、静かに希望が戻ってくる時期です。',
+   rev:'期待するのが怖くなっています。理想を下げる必要はなく、休むだけで戻ります。'},
+  {num:'XVIII',name:'月',          en:'The Moon',              emblem:'moon',
+   up:'はっきりしないものを、はっきりしないまま持っていい時期。不安の大半は輪郭のなさから来ています。',
+   rev:'霧が晴れます。思い込みだった部分が、順番に見えるようになります。'},
+  {num:'XIX',  name:'太陽',        en:'The Sun',               emblem:'sun',
+   up:'隠すものがなく、素のままで通用します。うまくいく日なので、大きめの一手を出していい。',
+   rev:'空回りぎみ。よく見せようとするほど、本来の良さが伝わりません。'},
+  {num:'XX',   name:'審判',        en:'Judgement',             emblem:'judgement',
+   up:'過去のことに答えが出ます。一度やめたことを、もう一度やる価値があります。',
+   rev:'同じ判断を何度も蒸し返しています。もう結論は出ていて、認めるかどうかだけです。'},
+  {num:'XXI',  name:'世界',        en:'The World',             emblem:'world',
+   up:'ひと区切りつきます。完璧ではなくても、ここで完成として次に進んでいい。',
+   rev:'あと少しのところで止まっています。残っているのは、たいてい面倒な最後の一手です。'}
+];
+
+const POSITIONS = ['過去','現在','未来'];
+
+/* カードの裏の絵は全部同じなので一度だけ作る */
+const BACK_SVG = `<svg viewBox="0 0 100 160" width="100%" height="100%" aria-hidden="true">
+  <rect x="6" y="6" width="88" height="148" fill="none" stroke="#E3B23C" stroke-width="1.2"/>
+  <g stroke="#E3B23C" stroke-width=".8" opacity=".65" fill="none">
+    <path d="M50 20v120M18 80h64M22 40l56 80M78 40L22 120"/>
+    <circle cx="50" cy="80" r="26"/><circle cx="50" cy="80" r="13"/>
+  </g>
+  <path d="M50 66l3.6 9.6 10.4.5-8.1 6.5 2.8 10-8.7-5.7-8.7 5.7 2.8-10-8.1-6.5 10.4-.5z" fill="#E3B23C"/>
+</svg>`;
+
+/* ============================================================
+   2. 音（すべてその場で合成。音声ファイルは使わない）
+   ============================================================ */
+const sound = (() => {
+  let audio;              /* AudioContext（オーディオコンテキスト）＝音を作る土台 */
+  let master, music, sfx; /* sfx ＝ sound effects の略。効果音の音量つまみ */
+  let noiseBuffer;        /* ザーというノイズの素 */
+  let muted = false;
+
+  /* 音量つまみを1つ作って、つなぎ先へ配線する */
+  function gain(value, target){
+    const node = audio.createGain();
+    node.gain.value = value;
+    node.connect(target);
+    return node;
+  }
+
+  /* LFO（エルエフオー＝低周波発振器）。目に見えない速さで値をゆっくり揺らす担当 */
+  function wobble(rate, depth, target){
+    const osc = audio.createOscillator();
+    osc.frequency.value = rate;
+    osc.connect(gain(depth, target));
+    osc.start();
+  }
+
+  /* 音量の山を描く。無音→peak→無音 */
+  function envelope(target, at, peak, attack, duration){
+    const node = audio.createGain();
+    node.gain.setValueAtTime(0.0001, at);
+    node.gain.exponentialRampToValueAtTime(peak, at + attack);
+    node.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+    node.connect(target);
+    return node;
+  }
+
+  function noiseSource(){
+    if (!noiseBuffer){
+      noiseBuffer = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const src = audio.createBufferSource();
+    src.buffer = noiseBuffer;
+    src.loop = true;
+    return src;
+  }
+
+  /* 低く漂うBGM。低い音を5つ重ね、それぞれ別の速さで揺らす */
+  function startAmbient(){
+    const lowPass = audio.createBiquadFilter();   /* 高い成分を削って丸くする */
+    lowPass.type = 'lowpass';
+    lowPass.frequency.value = 520;
+    lowPass.connect(music);
+    wobble(0.045, 220, lowPass.frequency);
+
+    const volumes = [0.16, 0.12, 0.08, 0.05, 0.03];
+    [73.42, 110, 146.83, 220, 293.66].forEach((hz, i) => {
+      const osc = audio.createOscillator();      /* osc ＝ oscillator の略。音の発振器 */
+      osc.type = i > 2 ? 'sine' : 'triangle';
+      osc.frequency.value = hz;
+      osc.detune.value = i % 2 ? 6 : -6;         /* わずかにずらして唸りを出す */
+      const volume = gain(volumes[i], lowPass);
+      osc.connect(volume);
+      osc.start();
+      wobble(0.03 + i * 0.017, volumes[i] * 0.55, volume.gain);
+    });
+
+    const bandPass = audio.createBiquadFilter(); /* 風の音にする帯域フィルタ */
+    bandPass.type = 'bandpass';
+    bandPass.frequency.value = 420;
+    bandPass.Q.value = 0.8;
+    const windVolume = gain(0.035, music);
+    noiseSource().connect(bandPass).connect(windVolume);
+    wobble(0.07, 0.022, windVolume.gain);
+  }
+
+  /* 最初のタップで起動する。それ以前は鳴らせない決まりがある */
+  function start(){
+    if (audio) return;
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return;
+    audio = new Ctor();
+    master = gain(muted ? 0 : 1, audio.destination);
+    music = gain(0.0001, master);
+    sfx = gain(0.9, master);
+    startAmbient();
+    music.gain.exponentialRampToValueAtTime(0.13, audio.currentTime + 6);
+  }
+
+  /* 紙が擦れる音。ノイズの通り道を高い方から低い方へ振る */
+  function swish(duration, from, to, peak){
+    if (!audio) return;
+    const at = audio.currentTime;
+    const bandPass = audio.createBiquadFilter();
+    bandPass.type = 'bandpass';
+    bandPass.Q.value = 1.1;
+    bandPass.frequency.setValueAtTime(from, at);
+    bandPass.frequency.exponentialRampToValueAtTime(to, at + duration);
+    const src = noiseSource();
+    src.connect(bandPass).connect(envelope(sfx, at, peak, duration * 0.22, duration));
+    src.start(at);
+    src.stop(at + duration + 0.05);
+  }
+
+  /* 澄んだ一音。基本の音に、その倍音をほんの少し足す */
+  function bell(hz, delay, peak, duration){
+    if (!audio) return;
+    const at = audio.currentTime + delay;
+    [[1, 'triangle', peak], [2.01, 'sine', peak * 0.3]].forEach(([ratio, type, level]) => {
+      const osc = audio.createOscillator();
+      osc.type = type;
+      osc.frequency.value = hz * ratio;
+      osc.connect(envelope(sfx, at, level, 0.012, duration));
+      osc.start(at);
+      osc.stop(at + duration + 0.05);
+    });
+  }
+
+  const SCALE = [220, 261.63, 293.66, 349.23, 392, 440, 523.25];
+
+  return {
+    shuffle(){
+      start();
+      swish(0.34, 2200, 400, 0.26);
+      swish(0.30, 1600, 300, 0.20);
+      setTimeout(() => swish(0.26, 1900, 360, 0.22), 130);
+    },
+    flip(index){
+      swish(0.16, 2600, 700, 0.22);
+      bell(SCALE[index % SCALE.length], 0.05, 0.16, 2.2);
+    },
+    finish(){
+      bell(392, 0, 0.14, 2.6);
+      bell(587.33, 0.16, 0.11, 3);
+    },
+    toggleMute(){
+      muted = !muted;
+      if (audio) master.gain.setTargetAtTime(muted ? 0 : 1, audio.currentTime, 0.15);
+      return muted;
+    }
+  };
+})();
+
+/* ============================================================
+   3. 画面の動き
+   ============================================================ */
+let count = 1;    /* 一度に引く枚数。1 か 3 */
+let drawn = [];   /* 引いたカード。{card, reversed} の配列 */
+
+$('deck').querySelector('span:nth-child(3)').innerHTML = BACK_SVG;
+
+/* 今日の日付を数字ひとつにする。同じ日なら同じ数字 → 同じカードが出る */
+const todayNumber = () => {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+};
+
+/* 種（seed）から同じ並びの乱数を作る。渡す種が同じなら結果も毎回同じ */
+function seededRandom(seed){
+  let state = seed % 2147483647;
+  if (state <= 0) state += 2147483646;
+  return () => (state = state * 16807 % 2147483647) / 2147483647;
+}
+
+function reset(){
+  drawn = [];
+  $('row').hidden = true;
+  $('row').innerHTML = '';
+  $('reading').innerHTML = '';
+  $('actions').hidden = true;
+  $('stage').hidden = false;
+  $('hint').textContent = count === 1 ? 'タップして引く' : 'タップして三枚引く';
+}
+
+function drawCards(){
+  const random = count === 1 ? seededRandom(todayNumber()) : Math.random;
+  const remaining = [...DECK];
+  drawn = [];
+  for (let i = 0; i < count; i++){
+    const picked = remaining.splice(Math.floor(random() * remaining.length), 1)[0];
+    drawn.push({ card: picked, reversed: random() < 0.4 });
+  }
+
+  $('stage').hidden = true;
+  $('row').hidden = false;
+  $('row').innerHTML = drawn.map(({card, reversed}, i) => `
+    <div class="slot">
+      ${count === 3 ? `<div class="pos">${POSITIONS[i]}</div>` : ''}
+      <button class="card" data-index="${i}" aria-label="カードをめくる">
+        <span class="inner">
+          <span class="face back">${BACK_SVG}</span>
+          <span class="face front ${reversed ? 'reversed' : ''}">
+            <span class="numeral">${card.num}</span>
+            <svg viewBox="0 0 100 100" class="emblem" aria-hidden="true" fill="none" stroke="#16110D"
+                 stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${EMBLEMS[card.emblem]}</svg>
+            <span>
+              <span class="cname">${card.name}</span>
+              <span class="orient">${reversed ? '逆位置' : '正位置'}</span>
+            </span>
+          </span>
+        </span>
+      </button>
+    </div>`).join('');
+  $('actions').hidden = false;
+}
+
+function openCard(button){
+  if (button.classList.contains('open')) return;
+  button.classList.add('open');
+
+  const index = +button.dataset.index;
+  const {card, reversed} = drawn[index];
+  sound.flip(index);
+
+  $('reading').insertAdjacentHTML('beforeend', `
+    <div class="entry">
+      <h2>${count === 3 ? POSITIONS[index] + '　' : ''}${card.name}</h2>
+      <p class="meta">${card.num}　${card.en}　${reversed ? '逆位置' : '正位置'}</p>
+      <p>${reversed ? card.rev : card.up}</p>
+    </div>`);
+
+  if ($('row').querySelectorAll('.card.open').length === drawn.length){
+    setTimeout(() => sound.finish(), 700);
+  }
+}
+
+function showToast(message){
+  $('toast').textContent = message;
+  $('toast').classList.add('show');
+  setTimeout(() => $('toast').classList.remove('show'), 1800);
+}
+
+/* ---- ボタンの割り当て ---- */
+document.querySelectorAll('.modes button').forEach(button => {
+  button.onclick = () => {
+    count = +button.dataset.count;
+    document.querySelectorAll('.modes button').forEach(other => {
+      const selected = other === button;
+      other.className = selected ? 'filled' : 'outline';
+      other.setAttribute('aria-pressed', selected);
+    });
+    reset();
+  };
+});
+
+$('deck').onclick = () => { sound.shuffle(); drawCards(); };
+$('row').onclick = event => {
+  const button = event.target.closest('.card');
+  if (button) openCard(button);
+};
+
+$('again').onclick = () => {
+  if (count === 1) showToast('今日の一枚は明日まで同じです');
+  reset();
+};
+
+$('share').onclick = async () => {
+  const title = count === 1 ? '今日の一枚' : 'タロット三枚引き';
+  const body = drawn.map(({card, reversed}, i) =>
+    `${count === 3 ? POSITIONS[i] + '：' : ''}${card.name}（${reversed ? '逆位置' : '正位置'}）\n${reversed ? card.rev : card.up}`
+  ).join('\n\n');
+  const text = `${title}\n\n${body}`;
+
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); showToast('結果をコピーしました'); }
+  } catch {
+    showToast('コピーできませんでした');
+  }
+};
+
+$('sound').onclick = () => {
+  const muted = sound.toggleMute();
+  $('sound').classList.toggle('muted', muted);
+  $('sound').setAttribute('aria-label', muted ? '音を出す' : '音を消す');
+  $('waves').hidden = muted;
+  $('slash').hidden = !muted;
+};
+
+reset();
+</script>
+</body>
+</html>
