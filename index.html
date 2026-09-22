@@ -42,6 +42,11 @@ button{font-family:inherit;cursor:pointer;border-radius:2px;touch-action:manipul
 
 .modes{display:flex;gap:8px;margin-bottom:26px}
 .modes button{flex:1;padding:11px 4px;font-size:13.5px;letter-spacing:.06em}
+.categories{display:flex;flex-wrap:wrap;gap:8px;margin:-16px 0 26px}
+.categories button{flex:1 1 28%;padding:9px 4px;font-size:12.5px;letter-spacing:.04em}
+.archive-list{display:flex;flex-direction:column;gap:8px;margin-bottom:22px}
+.archive-item{display:flex;align-items:baseline;gap:10px;width:100%;padding:12px 14px;font-size:13.5px;text-align:left;letter-spacing:.04em}
+.archive-item .date{flex:none;font-size:11px;color:var(--gold-dim);letter-spacing:.04em}
 .actions{display:flex;gap:10px;margin-top:26px}
 .actions button{flex:1;padding:13px 6px;font-size:14px;letter-spacing:.08em}
 
@@ -57,6 +62,7 @@ button{font-family:inherit;cursor:pointer;border-radius:2px;touch-action:manipul
 /* ---- 山札 ---- */
 .stage{text-align:center}
 .deck{position:relative;width:132px;height:210px;margin:8px auto 22px;padding:0;background:none;border:0}
+.deck:disabled{opacity:.4;cursor:default}
 .deck span{position:absolute;inset:0;display:block;border:1.5px solid var(--gold-dim);border-radius:6px;background:var(--blue)}
 .deck span:nth-child(1){transform:translate(-7px,6px) rotate(-4deg);opacity:.5}
 .deck span:nth-child(2){transform:translate(4px,3px) rotate(3deg);opacity:.75}
@@ -113,16 +119,38 @@ button{font-family:inherit;cursor:pointer;border-radius:2px;touch-action:manipul
 </button>
 
 <h1>タロット</h1>
-<p class="lede">カードを引いて、いまの自分を読む。<br>今日の一枚は日付ごとに決まっていて、何度開いても同じ絵が出ます。</p>
+
+<p class="lede">
+  カードを引いて、いまの自分を読む。<br>
+  【今日の一枚】は、今日という一日へのメッセージ。<br>
+  運命のささやきが、あなたの一日を映します。<br><br>
+
+  【三枚引き】では、3枚のカードからあなたの悩みや状況を読み解きます。<br>
+  心に問いかけてください。3枚のカードが映し出す、未来の兆しを。
+</p>
 
 <div class="modes">
   <button class="filled" data-count="1" aria-pressed="true">今日の一枚</button>
   <button class="outline" data-count="3" aria-pressed="false">三枚引き</button>
+  <button class="outline" id="archiveBtn" aria-pressed="false">アーカイブ</button>
+</div>
+
+<div class="categories" id="categories" hidden>
+  <button class="outline" data-category="love" aria-pressed="false">恋愛運</button>
+  <button class="outline" data-category="work" aria-pressed="false">仕事運</button>
+  <button class="outline" data-category="money" aria-pressed="false">金運</button>
+  <button class="outline" data-category="relationship" aria-pressed="false">対人運</button>
+  <button class="outline" data-category="health" aria-pressed="false">健康運</button>
 </div>
 
 <div class="stage" id="stage">
   <button class="deck" id="deck" aria-label="カードを引く"><span></span><span></span><span></span></button>
   <p class="hint" id="hint">タップして引く</p>
+</div>
+
+<div id="archive" hidden>
+  <p class="hint" id="archiveEmpty" hidden>まだ記録がありません</p>
+  <div class="archive-list" id="archiveList"></div>
 </div>
 
 <div class="row" id="row" hidden></div>
@@ -401,11 +429,64 @@ let drawn = [];   /* 引いたカード。{card, reversed} の配列 */
 
 $('deck').querySelector('span:nth-child(3)').innerHTML = BACK_SVG;
 
-/* 今日の日付を数字ひとつにする。同じ日なら同じ数字 → 同じカードが出る */
-const todayNumber = () => {
-  const d = new Date();
-  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+/* この端末だけの乱数。一度作ったらlocalStorageに保存して、以後はずっと同じ値を使う。
+   これがないと種が日付だけになり、全員が同じ日に同じカードを引いてしまう */
+function deviceSeed(){
+  const key = 'tarotDeviceSeed';
+  try {
+    let value = localStorage.getItem(key);
+    if (!value){
+      value = String(Math.floor(Math.random() * 1e9));
+      localStorage.setItem(key, value);
+    }
+    return Number(value);
+  } catch {
+    /* プライベートブラウズ等でlocalStorageが使えない場合は毎回作る（同日再現はできない） */
+    return Math.floor(Math.random() * 1e9);
+  }
+}
+
+/* 指定した日（省略時は今日）＋端末ごとの乱数を組み合わせた種。
+   同じ端末・同じ日なら同じ数字 → 同じカードが出る。端末が違えば数字も変わる。
+   offsetを変えると（三枚引きのカテゴリのように）同じ日・同じ端末でも別系統の乱数になる。
+   dateを過去の日付にすれば、その日に出たのと同じカードを後から再現できる */
+const dailySeed = (offset = 0, date = new Date()) => {
+  const dateNumber = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  return dateNumber * 1000003 + deviceSeed() + offset;
 };
+
+const dateKey = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+/* 三枚引きのカテゴリ。選んだカテゴリごとに種のoffsetを変えて、
+   今日の一枚（offset 0）とも他のカテゴリとも違う結果にする */
+const CATEGORIES = [
+  { id: 'love',         label: '恋愛' },
+  { id: 'work',         label: '仕事' },
+  { id: 'money',        label: '金'   },
+  { id: 'relationship', label: '対人' },
+  { id: 'health',       label: '健康' }
+];
+let selectedCategory = null;
+
+/* ---- 引いた記録（アーカイブ用） ----
+   カードの中身は保存せず「いつ・何を引いたか」だけを覚えておく。
+   表示するときはdailySeedで同じ日付から同じカードを計算し直す */
+const HISTORY_KEY = 'tarotHistory';
+
+function loadHistory(){
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+
+function recordDraw(entry){
+  const history = loadHistory();
+  const already = history.some(e =>
+    e.date === entry.date && e.count === entry.count && e.category === entry.category);
+  if (already) return;
+  history.unshift(entry);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
+}
 
 /* 種（seed＝シード）から同じ並びの乱数を作る。渡す種が同じなら結果も毎回同じ */
 function seededRandom(seed){
@@ -418,27 +499,47 @@ function seededRandom(seed){
   return next;
 }
 
+let viewingArchive = false; /* trueの間は「もう一度引く」がアーカイブ一覧に戻るボタンになる */
+
 function reset(){
   drawn = [];
+  viewingArchive = false;
   $('row').hidden = true;
   $('row').innerHTML = '';
   $('reading').innerHTML = '';
   $('actions').hidden = true;
+  $('archive').hidden = true;
   $('stage').hidden = false;
-  $('hint').textContent = count === 1 ? 'タップして引く' : 'タップして三枚引く';
+  if (count === 1){
+    $('hint').textContent = 'タップして引く';
+    $('deck').disabled = false;
+  } else if (!selectedCategory){
+    $('hint').textContent = 'カテゴリを選んでください';
+    $('deck').disabled = true;
+  } else {
+    $('hint').textContent = 'タップして三枚引く';
+    $('deck').disabled = false;
+  }
 }
 
-function drawCards(){
-  const random = count === 1 ? seededRandom(todayNumber()) : Math.random;
+/* offsetと日付から、その条件で出るはずのカードを計算する。
+   カードそのものは保存せず、この計算で毎回同じ結果を再現する */
+function computeCards(offset, date){
+  const random = seededRandom(dailySeed(offset, date));
   const remaining = [...DECK];
-  drawn = [];
+  const result = [];
   for (let i = 0; i < count; i++){
     const picked = remaining.splice(Math.floor(random() * remaining.length), 1)[0];
-    drawn.push({ card: picked, reversed: random() < 0.4 });
+    result.push({ card: picked, reversed: random() < 0.4 });
   }
+  return result;
+}
 
+function renderRow(){
   $('stage').hidden = true;
+  $('archive').hidden = true;
   $('row').hidden = false;
+  $('reading').innerHTML = '';
   $('row').innerHTML = drawn.map(({card, reversed}, i) => `
     <div class="slot">
       ${count === 3 ? `<div class="pos">${POSITIONS[i]}</div>` : ''}
@@ -458,6 +559,54 @@ function drawCards(){
       </button>
     </div>`).join('');
   $('actions').hidden = false;
+  $('again').textContent = viewingArchive ? 'アーカイブへ戻る' : 'もう一度引く';
+}
+
+function drawCards(){
+  /* offset 0＝今日の一枚、1以降＝三枚引きの各カテゴリ。どちらも「同じ日・同じ端末（・同じカテゴリ）
+     なら同じ結果」になる種を使うので、カテゴリを選んだ日はそのカードしか出ない */
+  const offset = count === 1 ? 0 : 1 + CATEGORIES.findIndex(c => c.id === selectedCategory);
+  drawn = computeCards(offset, new Date());
+  recordDraw({ date: dateKey(), count, category: count === 3 ? selectedCategory : null });
+  viewingArchive = false;
+  renderRow();
+}
+
+function showArchiveList(){
+  drawn = [];
+  viewingArchive = false;
+  $('stage').hidden = true;
+  $('row').hidden = true;
+  $('row').innerHTML = '';
+  $('reading').innerHTML = '';
+  $('actions').hidden = true;
+  $('archive').hidden = false;
+
+  const history = loadHistory();
+  $('archiveEmpty').hidden = history.length > 0;
+  $('archiveList').innerHTML = history.map((entry, i) => {
+    const label = entry.count === 1
+      ? '今日の一枚'
+      : `三枚引き・${CATEGORIES.find(c => c.id === entry.category)?.label ?? ''}`;
+    return `<button class="outline archive-item" data-index="${i}">
+      <span class="date">${entry.date}</span><span>${label}</span>
+    </button>`;
+  }).join('');
+}
+
+function openArchiveEntry(entry){
+  count = entry.count;
+  selectedCategory = entry.category;
+  document.querySelectorAll('.categories button').forEach(button => {
+    const selected = button.dataset.category === selectedCategory;
+    button.className = selected ? 'filled' : 'outline';
+    button.setAttribute('aria-pressed', selected);
+  });
+  const offset = entry.count === 1 ? 0 : 1 + CATEGORIES.findIndex(c => c.id === entry.category);
+  const [y, m, d] = entry.date.split('-').map(Number);
+  drawn = computeCards(offset, new Date(y, m - 1, d));
+  viewingArchive = true;
+  renderRow();
 }
 
 function openCard(button){
@@ -487,10 +636,33 @@ function showToast(message){
 }
 
 /* ---- ボタンの割り当て ---- */
-document.querySelectorAll('.modes button').forEach(button => {
+function selectMode(button){
+  document.querySelectorAll('.modes button').forEach(other => {
+    const selected = other === button;
+    other.className = selected ? 'filled' : 'outline';
+    other.setAttribute('aria-pressed', selected);
+  });
+}
+
+document.querySelectorAll('.modes button[data-count]').forEach(button => {
   button.onclick = () => {
     count = +button.dataset.count;
-    document.querySelectorAll('.modes button').forEach(other => {
+    selectMode(button);
+    $('categories').hidden = count !== 3;
+    reset();
+  };
+});
+
+$('archiveBtn').onclick = () => {
+  selectMode($('archiveBtn'));
+  $('categories').hidden = true;
+  showArchiveList();
+};
+
+document.querySelectorAll('.categories button').forEach(button => {
+  button.onclick = () => {
+    selectedCategory = button.dataset.category;
+    document.querySelectorAll('.categories button').forEach(other => {
       const selected = other === button;
       other.className = selected ? 'filled' : 'outline';
       other.setAttribute('aria-pressed', selected);
@@ -505,8 +677,17 @@ $('row').onclick = event => {
   if (button) openCard(button);
 };
 
+$('archiveList').onclick = event => {
+  const button = event.target.closest('.archive-item');
+  if (!button) return;
+  const entry = loadHistory()[+button.dataset.index];
+  if (entry) openArchiveEntry(entry);
+};
+
 $('again').onclick = () => {
+  if (viewingArchive){ showArchiveList(); return; }
   if (count === 1) showToast('今日の一枚は明日まで同じです');
+  else showToast('このカテゴリの三枚引きは明日まで同じです');
   reset();
 };
 
