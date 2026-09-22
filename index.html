@@ -407,11 +407,15 @@ const todayNumber = () => {
   return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 };
 
-/* 種（seed）から同じ並びの乱数を作る。渡す種が同じなら結果も毎回同じ */
+/* 種（seed＝シード）から同じ並びの乱数を作る。渡す種が同じなら結果も毎回同じ */
 function seededRandom(seed){
   let state = seed % 2147483647;
   if (state <= 0) state += 2147483646;
-  return () => (state = state * 16807 % 2147483647) / 2147483647;
+  const next = () => (state = state * 16807 % 2147483647) / 2147483647;
+  /* 種が1違うだけだと最初の数回はほぼ同じ値になる。日付は1日で1しか増えないので、
+     ここで空回しして種の差を広げてから使う */
+  for (let i = 0; i < 12; i++) next();
+  return next;
 }
 
 function reset(){
